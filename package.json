@@ -1,0 +1,23 @@
+{
+  "name": "echoattime",
+  "version": "1.0.0",
+  "description": "Microservice that prints a message to the console at a given date and time in the future.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ariel-costescu/echoattime.git"
+  },
+  "author": "ariel-costescu",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ariel-costescu/echoattime/issues"
+  },
+  "homepage": "https://github.com/ariel-costescu/echoattime#readme",
+  "devDependencies": {
+    "ioredis": "^5.4.1"
+  }
+}
