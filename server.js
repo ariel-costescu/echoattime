@@ -36,12 +36,11 @@ server.listen(PORT, () => {
 });
 
 setInterval(async () => {
-    const results = await redis.zrange("messageQueue", 0, new Date().getTime(), "BYSCORE", "LIMIT", 0, 1);
-    const firstResult = results?.length ? results[0] : null;
-    if (firstResult) {
-        const oldestMessage = JSON.parse(firstResult);
-        console.log(oldestMessage.message);
-        redis.zrem("messageQueue", firstResult);
-    }
+    const results = await redis.zrangebyscore("messageQueue", 0, new Date().getTime());
+    if (results) results.forEach((result) => {
+        const msg = JSON.parse(result);
+        console.log(msg);
+        redis.zrem("messageQueue", result);
+    });
     
 }, POLLING_INTERVAL_SECONDS * 1000);
