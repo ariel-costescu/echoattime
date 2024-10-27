@@ -5,16 +5,24 @@ import { getPostBodyAsJson } from './http-utils.js';
 
 const PORT = process.env.PORT;
 const POLLING_INTERVAL_SECONDS = process.env.POLLING_INTERVAL_SECONDS;
+const SHARD_ID = process.env.SHARD_ID;
 
 const redis = new Redis();
 
+const STREAM_KEY = "messageStream";
+const CONSUMER_GROUP_ID = "messageConsumers";
+const PENDING_MESSAGES_KEY = `${SHARD_ID}-queue`;
+
+redis.xinfo("STREAM", "messageStream").then(null, (err) => {
+    redis.xgroup("CREATE", STREAM_KEY, CONSUMER_GROUP_ID, "$", "MKSTREAM");
+    redis.xgroup("CREATECONSUMER", STREAM_KEY, CONSUMER_GROUP_ID, SHARD_ID);
+});
+
 const echoAtTimeHandler = (params, res) => {
     let time = new Date(params.time);
-    console.log(`time is '${time.toUTCString()}'`);
     let message = params.message;
-    console.log(`message is "${message}"`);
 
-    redis.zadd("messageQueue", time.getTime(), JSON.stringify(params));
+    redis.xadd(STREAM_KEY, "*", "time", time, "message", message);
 
     res.statusCode = 201;
     res.end();
@@ -35,12 +43,52 @@ server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-setInterval(async () => {
-    const results = await redis.zrangebyscore("messageQueue", 0, new Date().getTime());
-    if (results) results.forEach((result) => {
-        const msg = JSON.parse(result);
-        console.log(msg);
-        redis.zrem("messageQueue", result);
+const processStreamResults = (results) => {
+    if (results) {
+        const [key, messages] = results[0];
+        if (messages) {
+            messages.forEach(msg => {
+                if (msg) {
+                    const [msgId, msgFields] = msg;
+                    const msgTime = new Date(msgFields[1]);
+                    const echoedMsg = msgFields[3];
+                    const now = new Date();
+                    if (msgTime.getTime() <= now.getTime()) {
+                        console.log(`'${echoedMsg}'`);
+                        redis.xack(STREAM_KEY, CONSUMER_GROUP_ID, msgId);
+                    } else {
+                        const futureMsg = {
+                            "msgId": msgId,
+                            "msgTime": msgTime,
+                            "echoedMsg": echoedMsg
+                        }
+                        const msgScore = msgTime.getTime();
+                        redis.zadd(PENDING_MESSAGES_KEY, msgScore, JSON.stringify(futureMsg));
+                    }
+                }
+            });
+        }
+    }
+}
+
+const processPastMessages = (messages) => {
+    if (messages?.length > 0) messages.forEach(msg => {
+        const pastMsg = JSON.parse(msg);
+        console.log(`'${pastMsg.echoedMsg}'`);
+        redis.xack(STREAM_KEY, CONSUMER_GROUP_ID,pastMsg.msgId);
+        redis.zrem(PENDING_MESSAGES_KEY, msg);
     });
-    
+}
+
+// On server startup, recover any unprocessed stream messages
+redis.xreadgroup("GROUP", CONSUMER_GROUP_ID, SHARD_ID, "STREAMS", STREAM_KEY, "0")
+        .then(processStreamResults);  
+
+// Poll for new messages from the stream, processing them immediately if they are in the past
+// or add them to a sorted set for later processing
+setInterval(() => {
+    redis.xreadgroup("GROUP", CONSUMER_GROUP_ID, SHARD_ID, "STREAMS", STREAM_KEY, ">")
+        .then(processStreamResults);
+    redis.zrangebyscore(PENDING_MESSAGES_KEY, 0, Date.now())
+        .then(processPastMessages);
 }, POLLING_INTERVAL_SECONDS * 1000);
