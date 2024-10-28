@@ -3,7 +3,7 @@ Microservice that prints a message to the console at a given date and time in th
 
 To handle a large volume of messages, it uses Redis streams with consumer groups to fan out incoming messages across multiple cluster nodes.
 
-For simplicity, it assumes there is a fixed number of cluster nodes with each node.js server instance corresponding to a node with a unique SHARD_ID. In production, an external system like a load balancer would manage cluster nodes and SHARD_IDs, but here we're just reading the id from an .env file.
+For simplicity, it assumes there is a fixed number of cluster nodes with each node.js server instance corresponding to a node with a unique SHARD_ID, and a consumer group of the same id. In production, an external system like a load balancer would manage cluster nodes and SHARD_IDs, but here we're just reading the id from an .env file.
 
 Consumer groups ensure that each incoming message is assigned to a single server instance, so that a message can only be echoed once.
 
